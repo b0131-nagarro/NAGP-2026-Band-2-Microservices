@@ -1,0 +1,290 @@
+version: "3.9"
+
+# Leave Management - docker compose up --build
+
+services:
+
+  # infra
+  eureka:
+    image: steeltoeoss/eureka-server:latest
+    container_name: eureka
+    ports:
+      - "8761:8761"
+    # No curl in this image - broken healthcheck blocked all app services from starting
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  auth-db:
+    image: postgres:16-alpine
+    container_name: auth-db
+    environment:
+      POSTGRES_DB:       auth_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  employee-db:
+    image: postgres:16-alpine
+    container_name: employee-db
+    environment:
+      POSTGRES_DB:       employee_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - employee-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  leave-db:
+    image: postgres:16-alpine
+    container_name: leave-db
+    environment:
+      POSTGRES_DB:       leave_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - leave-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # services
+  auth-service:
+    build:
+      context: ./AuthService
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "5001:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+      ConnectionStrings__DefaultConnection: "Host=auth-db;Port=5432;Database=auth_db;Username=postgres;Password=postgres;SSL Mode=Disable"
+      Jwt__Key:            "BalpreetNAGP2026"
+      Jwt__Issuer:         "LeaveManagementSystem"
+      Jwt__Audience:       "LeaveManagementClients"
+      Jwt__ExpiryMinutes:  "60"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+      Eureka__Client__ServiceUrl:            "http://eureka:8761/eureka"
+      Eureka__Client__ShouldRegisterWithEureka: "true"
+      Eureka__Client__ShouldFetchRegistry:      "false"
+      Eureka__Instance__AppName:   "auth-service"
+      Eureka__Instance__HostName:  "auth-service"
+      Eureka__Instance__Port:      "8080"
+      Eureka__Instance__InstanceId: "auth-service:8080"
+    depends_on:
+      auth-db:
+        condition: service_healthy
+      eureka:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  employee-service:
+    build:
+      context: ./EmployeeService
+      dockerfile: Dockerfile
+    container_name: employee-service
+    ports:
+      - "5002:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+      INSTANCE_ID: employee-1
+      ConnectionStrings__DefaultConnection: "Host=employee-db;Port=5432;Database=employee_db;Username=postgres;Password=postgres;SSL Mode=Disable"
+      Jwt__Key:      "BalpreetNAGP2026"
+      Jwt__Issuer:   "LeaveManagementSystem"
+      Jwt__Audience: "LeaveManagementClients"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+      Eureka__Client__ServiceUrl:               "http://eureka:8761/eureka"
+      Eureka__Client__ShouldRegisterWithEureka: "true"
+      Eureka__Client__ShouldFetchRegistry:      "false"
+      Eureka__Instance__AppName:  "employee-service"
+      Eureka__Instance__HostName: "employee-service"
+      Eureka__Instance__Port:     "8080"
+      Eureka__Instance__InstanceId: "employee-1:8080"
+    depends_on:
+      employee-db:
+        condition: service_healthy
+      eureka:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  employee-service-replica:
+    build:
+      context: ./EmployeeService
+      dockerfile: Dockerfile
+    container_name: employee-service-replica
+    restart: unless-stopped
+    ports:
+      - "5006:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+      INSTANCE_ID: employee-2
+      RunDbSeed: "false"
+      ConnectionStrings__DefaultConnection: "Host=employee-db;Port=5432;Database=employee_db;Username=postgres;Password=postgres;SSL Mode=Disable"
+      Jwt__Key:      "BalpreetNAGP2026"
+      Jwt__Issuer:   "LeaveManagementSystem"
+      Jwt__Audience: "LeaveManagementClients"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+      Eureka__Client__ServiceUrl:               "http://eureka:8761/eureka"
+      Eureka__Client__ShouldRegisterWithEureka: "true"
+      Eureka__Client__ShouldFetchRegistry:      "false"
+      Eureka__Instance__AppName:  "employee-service"
+      Eureka__Instance__HostName: "employee-service-replica"
+      Eureka__Instance__Port:     "8080"
+      Eureka__Instance__InstanceId: "employee-2:8080"
+    depends_on:
+      employee-db:
+        condition: service_healthy
+      eureka:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  leave-service:
+    build:
+      context: ./LeaveService
+      dockerfile: Dockerfile
+    container_name: leave-service
+    restart: unless-stopped
+    ports:
+      - "5003:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+      ConnectionStrings__DefaultConnection: "Host=leave-db;Port=5432;Database=leave_db;Username=postgres;Password=postgres;SSL Mode=Disable"
+      Jwt__Key:      "BalpreetNAGP2026"
+      Jwt__Issuer:   "LeaveManagementSystem"
+      Jwt__Audience: "LeaveManagementClients"
+      Services__EmployeeService: "http://employee-service:8080"
+      RabbitMQ__Host:     "rabbitmq"
+      RabbitMQ__Username: "guest"
+      RabbitMQ__Password: "guest"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+      Eureka__Client__ServiceUrl:               "http://eureka:8761/eureka"
+      Eureka__Client__ShouldRegisterWithEureka: "true"
+      Eureka__Client__ShouldFetchRegistry:      "false"
+      Eureka__Instance__AppName:  "leave-service"
+      Eureka__Instance__HostName: "leave-service"
+      Eureka__Instance__Port:     "8080"
+      Eureka__Instance__InstanceId: "leave-service:8080"
+    depends_on:
+      leave-db:
+        condition: service_healthy
+      eureka:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      employee-service:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  notification-service:
+    build:
+      context: ./NotificationService
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "5005:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+      RabbitMQ__Host:     "rabbitmq"
+      RabbitMQ__Username: "guest"
+      RabbitMQ__Password: "guest"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+      Eureka__Client__ServiceUrl:               "http://eureka:8761/eureka"
+      Eureka__Client__ShouldRegisterWithEureka: "true"
+      Eureka__Client__ShouldFetchRegistry:      "false"
+      Eureka__Instance__AppName:  "notification-service"
+      Eureka__Instance__HostName: "notification-service"
+      Eureka__Instance__Port:     "8080"
+      Eureka__Instance__InstanceId: "notification-service:8080"
+    depends_on:
+      eureka:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: ./ApiGateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Docker
+      Jwt__Key:      "BalpreetNAGP2026"
+      Jwt__Issuer:   "LeaveManagementSystem"
+      Jwt__Audience: "LeaveManagementClients"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+      Eureka__Client__ServiceUrl:               "http://eureka:8761/eureka"
+      Eureka__Client__ShouldRegisterWithEureka: "true"
+      Eureka__Client__ShouldFetchRegistry:      "true"
+      Eureka__Instance__AppName:  "api-gateway"
+      Eureka__Instance__HostName: "api-gateway"
+      Eureka__Instance__Port:     "8080"
+      Eureka__Instance__InstanceId: "api-gateway:8080"
+    depends_on:
+      eureka:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      employee-service:
+        condition: service_started
+      employee-service-replica:
+        condition: service_started
+      leave-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+volumes:
+  auth-db-data:
+  employee-db-data:
+  leave-db-data:

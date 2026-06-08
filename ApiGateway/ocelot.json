@@ -1,0 +1,58 @@
+{
+  "Routes": [
+    {
+      "UpstreamPathTemplate": "/api/auth/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "DownstreamPathTemplate": "/api/auth/{everything}",
+      "DownstreamScheme": "http",
+      "ServiceName": "auth-service",
+      "UseServiceDiscovery": true,
+      "LoadBalancerOptions": { "Type": "RoundRobin" },
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": ""
+      }
+    },
+    {
+      "UpstreamPathTemplate": "/api/employees/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "DownstreamPathTemplate": "/api/employees/{everything}",
+      "DownstreamScheme": "http",
+      "ServiceName": "employee-service",
+      "UseServiceDiscovery": true,
+      "LoadBalancerOptions": { "Type": "RoundRobin" },
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer"
+      }
+    },
+    {
+      "UpstreamPathTemplate": "/api/leaves/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ],
+      "DownstreamPathTemplate": "/api/leaves/{everything}",
+      "DownstreamScheme": "http",
+      "ServiceName": "leave-service",
+      "UseServiceDiscovery": true,
+      "LoadBalancerOptions": { "Type": "RoundRobin" },
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer"
+      }
+    },
+    {
+      "UpstreamPathTemplate": "/api/notifications/{everything}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/api/notifications/{everything}",
+      "DownstreamScheme": "http",
+      "ServiceName": "notification-service",
+      "UseServiceDiscovery": true,
+      "LoadBalancerOptions": { "Type": "RoundRobin" },
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "Bearer"
+      }
+    }
+  ],
+  "GlobalConfiguration": {
+    "BaseUrl": "http://api-gateway:8080",
+    "ServiceDiscoveryProvider": {
+      "Type": "Eureka"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+
+# Docker override
+docker-compose.override.yml
+
+# Environment secrets (never commit real keys)
+.env
+appsettings.*.local.json
+
+# VS / Rider
+.vs/
+.idea/
+*.DotSettings.user
