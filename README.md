@@ -18,6 +18,8 @@ employee-service vs employee-service-replica
 
 Not two different microservices – same codebase, two containers for gateway round-robin demo. Only the main container seeds the DB.
 
+Postman tests are included in repo root.
+
 Failure cases (Postman)
 
 - bad password
