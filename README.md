@@ -20,6 +20,9 @@ Not two different microservices – same codebase, two containers for gateway ro
 
 Postman tests are included in repo root.
 
+Videos and Docs can be found here: https://nagarro-my.sharepoint.com/:f:/p/balpreet_singh/IgBuGxpKi026RZNffWDrUe6oAYgJaHDFcpRjcQw1pnng3KA?e=c4cA5r
+(Sorry couldn't upload due to huge sizes >50MB)
+
 Failure cases (Postman)
 
 - bad password
