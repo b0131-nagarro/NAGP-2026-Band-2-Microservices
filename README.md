@@ -1,108 +1,37 @@
-# Leave Management System
+Balpreet Singh - 3201228 - balpreet.singh@nagarro.com
 
-Microservices assignment – .NET 10, PostgreSQL, RabbitMQ, Ocelot gateway, Eureka, Jaeger tracing.
+Stack
 
-## Documentation
+- .NET 10 microservices, Ocelot gateway, Steeltoe Eureka client
+- Eureka server: `steeltoeoss/eureka-server` Docker image (port 8761)
+- PostgreSQL per service, RabbitMQ , Jaeger, OpenTelemetry
+- Polly HTTP retries + circuit breaker on LeaveService → EmployeeService
 
-| Document | Purpose |
-|----------|---------|
-| [README-ASSESSOR.md](README-ASSESSOR.md) | Quick evaluation guide |
-| [docs/DESIGN.md](docs/DESIGN.md) | Microservices design + architecture diagram |
-| [docs/API.md](docs/API.md) | API endpoints with request/response samples |
-| [docs/INTER-SERVICE-COMMUNICATION.md](docs/INTER-SERVICE-COMMUNICATION.md) | Sync/async communication |
-| [docs/SUBMISSION.md](docs/SUBMISSION.md) | Submission checklist |
+Startup steps:
+1. docker compose up --build -d (you should use docker compose down -v to delete volumes in order to purge all data)
+2. Wait for Eureka health (~45s first time).
+3. GET http://localhost:5000/health → 200
+4. Perform postman tests: employee login → apply casual → manager login → approve
+5. `docker compose logs notification-service` → NOTIFICATION lines
 
-## Repository
+employee-service vs employee-service-replica
 
-_(add your GitHub URL before submission)_
+Not two different microservices – same codebase, two containers for gateway round-robin demo. Only the main container seeds the DB.
 
-## Demo video
+Failure cases (Postman)
 
-_(add 5–10 minute demo recording URL before submission)_
+- bad password
+- not enough balance / overlap dates
+- manager-only routes as employee → 403
+- circuit breaker: stop employee-service + employee-service-replica, apply leave → 503, check leave-service logs for "Circuit OPEN"
 
-## Run it
-
-```powershell
-cd LeaveManagement
-docker compose up --build
-```
-
-First run can take a few minutes (wait for Eureka and .NET services).
-
-| URL | What |
-|-----|------|
-| http://localhost:5000 | API gateway (Postman base URL) |
-| http://localhost:8761 | Eureka dashboard |
-| http://localhost:15672 | RabbitMQ UI (guest/guest) |
-| http://localhost:16686 | Jaeger |
-
-```powershell
-docker compose down      # stop
-docker compose down -v   # wipe DB volumes (fresh seed)
-```
-
-## Docker images
-
-Images are **built locally** with `docker compose up --build`. They are not published to Docker Hub.
-
-## Environment variables
-
-Set in `docker-compose.yml` (override there if needed):
-
-| Variable | Used by | Example |
-|----------|---------|---------|
-| `Jwt__Key` | All services + gateway | `BalpreetNAGP2026` |
-| `Jwt__Issuer` | All | `LeaveManagementSystem` |
-| `Jwt__Audience` | All | `LeaveManagementClients` |
-| `Jwt__ExpiryMinutes` | Auth | `60` |
-| `ConnectionStrings__DefaultConnection` | Auth, Employee, Leave | Postgres host per service |
-| `Eureka__Client__ServiceUrl` | All apps | `http://eureka:8761/eureka` |
-| `Services__EmployeeService` | Leave | `http://employee-service:8080` |
-| `RabbitMQ__Host` | Leave, Notification | `rabbitmq` |
-| `RabbitMQ__Username` / `Password` | Leave, Notification | `guest` / `guest` |
-| `OpenTelemetry__OtlpEndpoint` | All .NET services | `http://jaeger:4317` |
-| `RunDbSeed` | Employee replica | `false` on `employee-service-replica` |
-| `INSTANCE_ID` | Employee instances | `employee-1` / `employee-2` |
-
-## API testing
-
-1. Import `LeaveManagement.postman_collection.json`
-2. Run **Auth → employee login** (saves `{{token}}`)
-3. For manager flows: **manager login**, copy token to `{{token}}` if needed
-4. See [docs/API.md](docs/API.md) for full endpoint list
-
-## Users (seeded)
-
-| User | Password | Role |
-|------|----------|------|
-| employee1 | Employee@123 | Employee |
-| employee2 | Employee@123 | Employee |
-| manager1 | Manager@123 | Manager |
-
-Balances per year: Casual 12, Sick 10, Privilege 15.
-
-## Two employee containers
-
-- **employee-service** – main instance, DB seed
-- **employee-service-replica** – same app, for gateway load-balancing demo
-
-Both register in Eureka as **employee-service**. Check `X-Service-Instance` header (`employee-1` / `employee-2`) on repeated GETs via gateway.
-
-## Notifications
-
-```powershell
-docker compose logs -f notification-service
-```
-
-## Troubleshooting
-
-- **503 on apply leave** – employee-service down or circuit breaker open
-- **401** – token expired; login again
-- **Eureka empty** – wait ~2 min after `compose up`; check `docker compose ps` all Running
-- **Circuit breaker demo** – `docker compose stop employee-service employee-service-replica`, apply leave, check `docker compose logs leave-service`
-
-## Build locally
-
-```powershell
-dotnet build LeaveManagement.sln -c Release
-```
+Services used:
+1. api-gateway              | 5000 |     -       | Ocelot + JWT, Eureka lookup 
+2. auth-service             | 5001 |   auth-db   | login, JWT 
+3. employee-service         | 5002 | employee-db | employees, balances 
+4. employee-service-replica | 5006 |   same DB   | replica for LB demo only 
+5. leave-service            | 5003 |  leave-db   | apply, approve, history 
+6. notification-service     | 5005 |     -       | RabbitMQ consumer, logs notifications 
+7. eureka                   | 8761 |     -       | steeltoeoss/eureka-server image 
+8. rabbitmq                 | 15672 |    -       | 'leave.events' status
+9.  jaeger                  | 16686 |    -       | tracing
